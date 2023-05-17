@@ -12,7 +12,11 @@ For example, this tool can convert custom SUP or IGS files so they can be import
 - Only Scenarist MUI for graphic props are allowed (PGS, TextST, IGS…) but chances are other MUI assets (audio, video) can be converted too with some tweaks.
 
 ## Usage:
-`python3 scenaristream.py PARAMETERS -o output_file`
+If you would just like the client without thinking:
+`python3 client.py PARAMETERS -o output_file`<br>
+
+You can also install the small package and import the internal classes with `from scenaristream import EsMuiStream, StreamFile`.<br>
+`EsMuiStream` parses a xES+MUI stream. `StreamFile` parses a raw stream like PG (SUP) or IG (MNU).
 
 ### Parameters
 `-s --stream <file>` – Input raw stream file (SUP-PGS or MNU-IGS).<br>
@@ -27,5 +31,5 @@ The user is responsible for using the proper extension when converting to Scenar
 
 ### Example usage
 The command below converts a .SUP file to a PES+MUI Scenarist project.<br>
-`python3 scenaristream.py -s subtitles.sup -o ./project/subtitles.pes`<br>
+`python3 client.py -s subtitles.sup -o ./project/subtitles.pes`<br>
 In the project folder, subtitles.pes and subtitles.pes.mui will be created.
