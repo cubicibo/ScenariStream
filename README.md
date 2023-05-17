@@ -2,22 +2,30 @@
 Scenarist BD MUI+Elementary Stream <-> SUP, MNU conversion tool.
 
 ## Brief
-ScenariStream is a small python utility to do bidirectional conversion between proprietary Scenarist project files (MUI+xES) and raw stream files like SUP/PGS and MNU/IGS.
+ScenariStream is a python utility to perform bidirectional conversion between proprietary Scenarist project files (MUI+xES) and raw stream files like SUP/PGS and MNU/IGS.
 
-With this tool, it is now possible to import custom SUP files into Scenarist. Conversely, it allows to reuse assets made with Scenarist in other tools like BDEdit. It is 100% bijective and preserve all data and timestamps.
+For example, this tool can convert custom SUP or IGS files so they can be imported in Scenarist. On the other hand, Scenarist BD assets can be converted in the other direction for usage in other tools like BDEdit, tsMuxer, etc! The conversion is 100% bijective: all data and timestamps are preserved.
 
 ## Limitations
-- Timestamp wrap-around is not implemented. You should not try to convert files with durarions longer than 4 hours or so.
+- Timestamp wrap-around is not implemented/tested. You should not try to convert files with durarions longer than 5 hours.
 - TextST support is possible but voluntarily blocked. I don't know how are structured raw TextST stream files.
-- Only Scenarist MUI for graphic props are allowed (PGS, TextST, IGS…) but maybe other MUI assets (audio, video) work as well.
+- Only Scenarist MUI for graphic props are allowed (PGS, TextST, IGS…) but chances are other MUI assets (audio, video) can be converted too with some tweaks.
 
 ## Usage:
 `python3 scenaristream.py PARAMETERS -o output_file`
 
-### PARAMETERS
+### Parameters
 `-s --stream <file>` – Input raw stream file (SUP-PGS or MNU-IGS).<br>
 `-x --xes <file>` – Input Scenarist Elementary Stream file (PES or IES).<br>
-`-m --mui <file>` – Input Scenarist MUI file. Compulsory with xES, else empty!
+`-m --mui <file>` – Input Scenarist MUI file. Mandatory with xES, else empty!
 
 ### Output
-`-o --output <file>` – Output. The format is inferred from the given extension. For Scenarist output (MUI+ES), you must specify only the xES file. The MUI file is automatically written aside with the ".mui" extension appended. You are responsible for selecting the proper extension (.PES, .IES, ...)
+`-o --output <file>` – Output file with extension. The format is inferred from the extension. For Scenarist output, only the xES file should be specified. The .MUI file is always generated aside.
+
+### Note
+The user is responsible for using the proper extension when converting to Scenarist xES+MUI format. The output extension should be .PES (.IES) when converting from .SUP (.MNU, respectively).
+
+### Example usage
+The command below converts a .SUP file to a PES+MUI Scenarist project.<br>
+`python3 scenaristream.py -s subtitles.sup -o ./project/subtitles.pes`<br>
+In the project folder, subtitles.pes and subtitles.pes.mui will be created.

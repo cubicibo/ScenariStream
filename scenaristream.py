@@ -39,29 +39,30 @@ from pathlib import Path
 from enum import IntEnum, Enum
 from struct import unpack, pack
 from argparse import ArgumentParser
-from typing import Generator, Union
+from typing import Generator, Union, NoReturn
 
 class MUIType(IntEnum):
     VIDEO = 0x01
     AUDIO = 0x02
     GRAPHICS=0x03
 
-#I think TextST is also a MUIType.GRAPHICS, but what is the header? 'TS'?
+#TextST should also be MUIType.GRAPHICS, but what is the header? 'TS'?
 class StreamHeader(Enum):
     PG = b'PG'
     IG = b'IG'
-    TS = b'TS' #!!! This is likely incorrect !!!
+    TS = b'TS' #!!! This is likely incorrect, see above comment !!!
 
 class BDGraphicSegment(IntEnum):
     PDS = 0x14
     ODS = 0x15
     PCS = 0x16
     WDS = 0x17
-    ICS = 0x18
+    ICS = 0x18 #IGS
     END = 0x80
-    TDIALOG = 0x81
-    TSTYLE  = 0x82
+    TDIALOG = 0x81 #TextST
+    TSTYLE  = 0x82 #TextST
 
+#%% Raw stream format (tsMuxer, SUPer, avs2bdnxml)
 class StreamFile:
     """
     Represents a .SUP, .MNU, .TextST file that contains a (valid) stream.
@@ -134,18 +135,19 @@ class StreamFile:
         return list(self.gen_segments())
 ####StreamFile
 
+#%% Scenarist BD format parser
 class EsMuiFile:
-    def __init__(self, mui_file, pes_file) -> None:
+    def __init__(self, mui_file: Union[str, Path], pes_file: Union[str, Path]) -> None:
         if not os.path.exists(mui_file) or not os.path.exists(pes_file):
-            raise FileNotFoundError("Missing MUI or PES file.")
+            raise FileNotFoundError("Missing MUI or xES file.")
 
-        #We can afford to read the MUI file at once
+        #MUI files are lightweight, read it all at once.
         with open(mui_file, 'rb') as f:
             self._mui_data = f.read()
         self._pes_file = pes_file
 
-        assert self.type == MUIType.GRAPHICS
-        assert bytes([0xFF] + [0x00]*13) == self._mui_data[-14:], "Tail signature does not look like MUI."
+        assert self.type == MUIType.GRAPHICS, f"Not a MUI Graphics file, got '{self.type}'"
+        assert bytes([0xFF] + [0x00]*13) == self._mui_data[-14:], "MUI tail signature not found."
         self._mui_data = self._mui_data[:-14]
 
     @property
@@ -164,14 +166,14 @@ class EsMuiFile:
 
     @staticmethod
     def to_header(pts: int, dts: int) -> bytes:
-        #what the fuck Scenarist? Like, seriously?
+        #Convert PTS and DTS to cryptic scenarist format
         payload = bytearray(b'\x00'*9)
         payload[4] |= 0x80*bool(dts % 2) #accuracy
         sdts = int(dts/2 + 27e6)
         payload[:4] = pack(">I", sdts)
 
         spts = int((pts/2 + 27e6)*128)
-        assert (spts >> 32) < 0x7F, "Sorry, this software does not support timestamp rollover."
+        assert (spts >> 32) <= 0x7F, "Timestamp overflow."
         payload[4] |= 0x7F & (spts >> 32)
 
         payload[5:] = pack(">I", spts & ((1 << 32) -1))
@@ -182,7 +184,7 @@ class EsMuiFile:
         index = 4
         with open(self._pes_file, 'rb') as pes:
             while self._mui_data[index:]:
-                segment_type = BDGraphicSegment(self._mui_data[index])
+                segment_type = self._mui_data[index]
                 assert segment_type in valid_segments
 
                 index += 1
@@ -193,7 +195,8 @@ class EsMuiFile:
                 segment_data = pes.read(block_length)
                 if len(segment_data) < block_length:
                     segment_data += pes.read(block_length-len(segment_data))
-                    assert len(segment_data) == block_length, "IO error or incomplete PES file."
+                    assert len(segment_data) == block_length, "IO error or incomplete ES file."
+                assert segment_data[0] == segment_type, "Segment type mismatch between MUI and ES."
                 yield header + segment_data
         return None
 
@@ -244,12 +247,14 @@ class EsMuiFile:
             print(f"Converted {sc} segments.")
 ####EsMuiFile
 
-#%% User script
-def exit_msg(msg: str, is_error: bool = True):
-    print(msg)
-    sys.exit(is_error)
-
+#%% Main code
 if __name__ == '__main__':
+    def exit_msg(msg: str, is_error: bool = True) -> NoReturn:
+        if msg != '':
+            print(msg)
+        sys.exit(is_error)
+    ####exit_msg
+
     parser = ArgumentParser()
     group = parser.add_mutually_exclusive_group()
     group.add_argument("-s", "--stream", type=str, help="Input (sup, mnu) to convert to xES+MUI.", default='')
@@ -257,33 +262,37 @@ if __name__ == '__main__':
 
     parser.add_argument("-m", "--mui", type=str, help="Input MUI associated to xES to convert.", default='')
 
-    parser.add_argument('-v', '--version', action='version', version=__version__)
+    parser.add_argument('-v', '--version', action='version', version=f"(c) {__author__}, v{__version__}")
     parser.add_argument("-o", "--output",  type=str, required=True)
     args = parser.parse_args()
 
-    if args.mui == '' and args.xes != '':
-        exit_msg("xES provided but no MUI, exiting.")
-
     if args.stream == '' and args.xes == '':
         exit_msg("No input provided, exiting.")
+    elif args.mui != '' and args.stream != '':
+        exit_msg("Using conflicting args --mui and --stream, exiting.")
 
-    output_file = Path(args.output)
-    if not output_file.parent.exists():
+    if args.xes != '' and args.mui == '':
+        exit_msg("xES provided but no MUI, exiting.")
+    elif args.mui != '' and args.xes == '':
+        exit_msg("MUI provided but no xES, exiting.")
+
+    if not Path(args.output).parent.exists():
         exit_msg("Parent directory of output file does not exist, exiting.")
 
     if args.stream:
-        stream_file = args.stream
-        if not os.path.exists(stream_file):
+        if not os.path.exists(args.stream):
             exit_msg("Input file does not exist, exiting.")
 
-        print("Converting to xES + MUI...")
-        EsMuiFile.convert_to_esmui(stream_file, args.output, args.output + '.mui')
-        exit_msg("Done, closing.", is_error = False)
+        if not args.output.strip().lower().endswith('es'):
+            exit_msg("Desired output format is not ES? Exiting.")
+
+        print("Converting to xES+MUI...")
+        EsMuiFile.convert_to_esmui(args.stream, args.output, args.output + '.mui')
+        exit_msg("", is_error=False)
     elif args.mui:
         print("Converting from xES+MUI...")
         emf = EsMuiFile(args.mui, args.xes)
         emf.convert_to_stream(args.output)
-        exit_msg("Done, closing.", is_error=False)
+        exit_msg("", is_error=False)
     exit_msg("Failed parsing args.")
 ####if
-
