@@ -31,7 +31,7 @@ import os
 from pathlib import Path
 from enum import IntEnum, Enum
 from struct import unpack, pack
-from typing import Generator, Union
+from typing import Generator, Union, Optional
 
 class MUIType(IntEnum):
     VIDEO = 0x01
@@ -139,7 +139,7 @@ class EsMuiStream:
         self._pes_file = pes_file
 
         assert self.type == MUIType.GRAPHICS, f"Not a MUI Graphics file, got '{self.type}'"
-        assert bytes([0xFF] + [0x00]*13) == self._mui_data[-14:], "MUI tail signature not found."
+        assert self.__class__._mui_tail() == self._mui_data[-14:], "MUI tail signature not found."
         self._mui_data = self._mui_data[:-14]
 
     @property
@@ -195,12 +195,46 @@ class EsMuiStream:
     def segments(self) -> list[bytes]:
         return [seg for seg in self.gen_segments()]
 
-    @staticmethod
-    def convert_to_esmui(stream_file: Union[str, Path], es_file: Union[str, Path], mui_file: Union[str, Path]) -> None:
+    @classmethod
+    def _mui_tail(cls) -> bytes:
+        return bytes([0xFF] + [0x00]*13)
+
+    @classmethod
+    def segment_writer(cls, es_file: Union[str, Path], mui_file: Optional[Union[str, Path]] = None) -> Generator[None, None, None]:
+        if mui_file is None:
+            ext = '.' + ('MUI' if str(es_file).endswith('ES') else 'mui')
+            mui_file = str(es_file) + ext
+
+        esf = open(es_file, 'wb')
+        mui = open(mui_file, 'wb')
+
+        mui.write(bytes([0x00, 0x00, 0x00, MUIType.GRAPHICS]))
+
+        try:
+            segment = yield
+            while segment is not None:
+                segment = bytes(segment)
+                esf.write(segment[10:])
+                mui.write(segment[10:11] + pack(">I", unpack(">H", segment[11:13])[0]+3))
+                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10])))
+                segment = yield
+            mui.write(cls._mui_tail())
+        except Exception as e:
+            print(f"Aborted, critical error while writing ES+MUI: '{e}'")
+        mui.close()
+        esf.close()
+        yield None
+
+    @classmethod
+    def convert_to_esmui(cls, stream_file: Union[str, Path], es_file: Union[str, Path], mui_file: Optional[Union[str, Path]] = None) -> None:
         """
-        Convert a raw stream to a MuiFile
+        Convert a raw stream to a MuiFile.
         """
         stream = StreamFile(stream_file)
+
+        if mui_file is None:
+            ext = '.' + ('MUI' if str(es_file).endswith('ES') else 'mui')
+            mui_file = str(es_file) + ext
 
         esf = open(es_file, 'wb')
         mui = open(mui_file, 'wb')
@@ -213,7 +247,7 @@ class EsMuiStream:
                 esf.write(segment[10:])
                 #Write header (segment type, length+3, )
                 mui.write(segment[10:11] + pack(">I", unpack(">H", segment[11:13])[0]+3))
-                mui.write(__class__.encode_timestamps(*unpack(">" + "I"*2, segment[2:10])))
+                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10])))
             #write tail
             mui.write(bytes([0xFF] + [0x00]*13))
             print(f"Converted {sc} segments.")

@@ -15,8 +15,9 @@ For example, this tool can convert custom SUP or IGS files so they can be import
 If you would just like the client without thinking:
 `python3 client.py PARAMETERS -o output_file`<br>
 
-You can also install the small package and import the internal classes with `from scenaristream import EsMuiStream, StreamFile`.<br>
-`EsMuiStream` parses a xES+MUI stream. `StreamFile` parses a raw stream like PG (SUP) or IG (MNU).
+You can also install the small package:
+`python3 -m pip install -e .`<br>
+Then, you can import the internal classes with `from scenaristream import EsMuiStream, StreamFile`, where `EsMuiStream` parses a xES+MUI stream and `StreamFile` parses a raw stream like PG (SUP) or IG (MNU).
 
 ### Parameters
 `-s --stream <file>` – Input raw stream file (SUP-PGS or MNU-IGS).<br>

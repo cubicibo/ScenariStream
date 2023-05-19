@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ScenariStream"
+dynamic = ["version"]
+authors = [{ name="cubicibo", email="55701024+cubicibo@users.noreply.github.com"},]
+description = "Package to parse and convert Scenarist(R) MUI+ES files"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+readme = "README.md"
+
+[metadata]
+version = {attr = "package.__metadata__.__version__"}
+
+[project.urls]
+"Homepage" = "https://github.com/cubicibo/ScenariStream"
+"Bug Tracker" = "https://github.com/cubicibo/ScenariStream/issues"
