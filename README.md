@@ -15,17 +15,16 @@ For example, this tool can convert custom SUP or IGS files so they can be import
 If you would just like the client without thinking:
 `python3 client.py PARAMETERS -o output_file`<br>
 
-You can also install the small package:
-`python3 -m pip install -e .`<br>
-Then, you can import the internal classes with `from scenaristream import EsMuiStream, StreamFile`, where `EsMuiStream` parses a xES+MUI stream and `StreamFile` parses a raw stream like PG (SUP) or IG (MNU).
-
 ### Parameters
 `-s --stream <file>` – Input raw stream file (SUP-PGS or MNU-IGS).<br>
 `-x --xes <file>` – Input Scenarist Elementary Stream file (PES or IES).<br>
-`-m --mui <file>` – Input Scenarist MUI file. Mandatory with xES, else empty!
+`-m --mui <file>` – Input Scenarist MUI file.<br>
+`-o --output <file>` – Output file with extension. The format is inferred from the extension. For xES+MUI output, only the xES file should be specified, the MUI file is generated aside.
 
-### Output
-`-o --output <file>` – Output file with extension. The format is inferred from the extension. For Scenarist output, only the xES file should be specified. The .MUI file is always generated aside.
+### As a package
+You can also install this utility as a Python package:<br>
+`python3 -m pip install -e .`<br>
+Then, you can import the internal classes with `from scenaristream import EsMuiStream, StreamFile`, where `EsMuiStream` parses a xES+MUI stream and `StreamFile` parses a raw stream like PG (SUP) or IG (MNU).
 
 ### Note
 The user is responsible for using the proper extension when converting to Scenarist xES+MUI format. The output extension should be .PES (.IES) when converting from .SUP (.MNU, respectively).

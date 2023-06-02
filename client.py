@@ -52,16 +52,23 @@ if __name__ == '__main__':
     parser.add_argument("-o", "--output",  type=str, required=True)
     args = parser.parse_args()
 
-    if args.stream == '' and args.xes == '':
+    if args.stream == '' and args.xes == '' and args.mui == '':
         exit_msg("No input provided, exiting.")
-    elif args.mui != '' and args.stream != '':
+    elif (args.mui != '' or args.xes != '') and args.stream != '':
         exit_msg("Using conflicting args --mui and --stream, exiting.")
 
     if args.xes != '' and args.mui == '':
-        exit_msg("xES provided but no MUI, exiting.")
+        if os.path.exists(args.xes + '.mui'):
+            args.mui = args.xes + '.mui'
+        elif os.path.exists(args.xes + '.MUI'):
+            args.mui = args.xes + '.MUI'
+        else:
+            exit_msg("xES provided but no MUI, exiting.")
     elif args.mui != '' and args.xes == '':
-        exit_msg("MUI provided but no xES, exiting.")
-
+        if os.path.exists('.'.join(args.mui.split('.')[:-1])):
+            args.xes = '.'.join(args.mui.split('.')[:-1])
+        else:
+            exit_msg("MUI provided but no xES, exiting.")
     if not Path(args.output).parent.exists():
         exit_msg("Parent directory of output file does not exist, exiting.")
 

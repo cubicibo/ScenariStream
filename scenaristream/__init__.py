@@ -183,7 +183,6 @@ class EsMuiStream:
                 block_length = unpack(">I", self._mui_data[index:(index:=index+4)])[0]
 
                 header = __class__.get_timestamps(self._mui_data[index:(index:=index+9)])
-
                 segment_data = pes.read(block_length)
                 if len(segment_data) < block_length:
                     segment_data += pes.read(block_length-len(segment_data))
