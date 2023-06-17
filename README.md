@@ -1,5 +1,5 @@
 # ScenariStream
-Scenarist BD MUI+Elementary Stream <-> SUP, MNU conversion tool.
+Scenarist BD MUI+Elementary Stream <-> SUP, MNU conversion tool. (+ TextST)
 
 ## Brief
 ScenariStream is a python utility to perform bidirectional conversion between proprietary Scenarist project files (MUI+xES) and raw stream files like SUP/PGS and MNU/IGS.
@@ -8,18 +8,19 @@ For example, this tool can convert custom SUP or IGS files so they can be import
 
 ## Limitations
 - Timestamp wrap-around is not implemented/tested. You should not try to convert files with durarions longer than 5 hours.
-- TextST support is possible but voluntarily blocked. I don't know how are structured raw TextST stream files.
-- Only Scenarist MUI for graphic props are allowed (PGS, TextST, IGS…) but chances are other MUI assets (audio, video) can be converted too with some tweaks.
+- TextST support is limited and only unidirectional, from .TextST to TES+MUI project.
+- Only Scenarist MUI for graphic and text props are allowed (PGS, TextST, IGS…) but chances are other MUI assets (audio, video) can be converted too with some tweaks.
 
 ## Usage:
 If you would just like the client without thinking:
 `python3 client.py PARAMETERS -o output_file`<br>
 
 ### Parameters
-`-s --stream <file>` – Input raw stream file (SUP-PGS or MNU-IGS).<br>
-`-x --xes <file>` – Input Scenarist Elementary Stream file (PES or IES).<br>
+`-s --stream <file>` – Input raw stream file (SUP-PGS, MNU-IGS or TextST (.textst)).<br>
+`-x --xes <file>` – Input Scenarist Elementary Stream file (PES, IES or TES).<br>
 `-m --mui <file>` – Input Scenarist MUI file.<br>
-`-o --output <file>` – Output file with extension. The format is inferred from the extension. For xES+MUI output, only the xES file should be specified, the MUI file is generated aside.
+`-o --output <file>` – Output file with extension. The format is inferred from the extension. For xES+MUI output, only the xES file should be specified, the MUI file is generated aside.<br>
+`-t --textst` – Flag for TextST conversion.
 
 ### As a package
 You can also install this utility as a Python package:<br>
