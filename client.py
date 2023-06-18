@@ -43,10 +43,12 @@ if __name__ == '__main__':
 
     parser = ArgumentParser()
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("-s", "--stream", type=str, help="Input (sup, mnu) to convert to xES+MUI.", default='')
+    group.add_argument("-s", "--stream", type=str, help="Input (sup, mnu, textst) to convert to xES+MUI.", default='')
     group.add_argument("-x", "--xes", type=str, help="Input xES to convert.", default='')
 
     parser.add_argument("-m", "--mui", type=str, help="Input MUI associated to xES to convert.", default='')
+    parser.add_argument("-t", "--textst", help="Use if TextST.", action='store_true')
+
 
     parser.add_argument('-v', '--version', action='version', version=f"(c) {__author__}, v{__version__}")
     parser.add_argument("-o", "--output",  type=str, required=True)
@@ -80,10 +82,16 @@ if __name__ == '__main__':
             exit_msg("Desired output format is not xES? Exiting.")
 
         print("Converting to xES+MUI...")
-        EsMuiStream.convert_to_esmui(args.stream, args.output, args.output + '.mui')
+        if (args.stream.lower().endswith('textst') or args.xes.lower().endswith('tes')) and not args.textst:
+            exit_msg("Is the conversion for TextST? Flag it as such if so. Exiting...")
+        elif args.textst:
+            EsMuiStream.convert_to_tesmui(args.stream, args.output, args.output + '.mui')
+        else:
+            EsMuiStream.convert_to_pesmui(args.stream, args.output, args.output + '.mui')
         exit_msg("", is_error=False)
     elif args.mui:
         print("Converting from xES+MUI...")
+        assert args.textst is False and args.xes.lower().endswith('tes') is False, "Cannot convert TES to TextST at this time."
         emf = EsMuiStream(args.mui, args.xes)
         emf.convert_to_stream(args.output)
         exit_msg("", is_error=False)
