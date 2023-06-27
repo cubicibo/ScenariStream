@@ -209,27 +209,40 @@ class EsMuiStream:
 
     @staticmethod
     def get_timestamps(tc_bytestring: bytes) -> bytes:
+        mask = (1 << 32) - 1
         #Convert the proprietary timestamps to standard PTS and DTS
-        dts = (unpack(">I", tc_bytestring[:4])[0] - 27e6)/45e3
-        dts += (tc_bytestring[4] >> 7)/90e3
+        dts = unpack(">I", tc_bytestring[:4])[0] - int(27e6)
+        dts = (dts << 1) + (tc_bytestring[4] >> 7)
         ov_cnt = tc_bytestring[4] & 0x7F
         #for each overflow, we add 2**32/128
         pts = ((unpack(">I", tc_bytestring[5:])[0])/128 + (1 << 25)*ov_cnt - 27e6)/45e3
-        return pack(">I", round(pts*90e3)) + pack(">I", round(dts*90e3))
+        return pack(">I", round(pts*90e3) & mask) + pack(">I", dts & mask)
 
     @staticmethod
-    def encode_timestamps(pts: int, dts: int) -> bytes:
+    def encode_timestamps(pts: int, dts: int, is_first_block: bool = False) -> bytes:
         #Convert PTS and DTS to cryptic scenarist format
+        mask = (1 << 32) - 1
         payload = bytearray(b'\x00'*9)
+        is_overflow = dts + int(27e6) > mask
         payload[4] |= 0x80*bool(dts % 2) #accuracy
-        sdts = int(dts/2 + 27e6)
+
+        if not is_overflow:
+            sdts = (dts >> 1) + int(27e6)
+        else:
+            dts = (dts + int(27e6)) & mask
+            # Black magic, or totally wrong.
+            sdts = (int(27e6 - dts) >> 1) + dts + (dts % 2)
         payload[:4] = pack(">I", sdts)
 
         spts = int((pts/2 + 27e6)*128)
         assert (spts >> 32) <= 0x7F, "Timestamp overflow."
-        payload[4] |= 0x7F & (spts >> 32)
 
-        payload[5:] = pack(">I", spts & ((1 << 32) -1))
+        #Due to the lossy of conversion, we assume that only the first
+        # set of segments (till the first END, inc.) can skip this operation
+        if not is_first_block:
+            payload[4] |= 0x7F & (spts >> 32)
+
+        payload[5:] = pack(">I", spts & mask)
         return payload
 
     def gen_segments(self) -> Generator[bytes, None, None]:
@@ -317,13 +330,17 @@ class EsMuiStream:
 
         mui.write(bytes([0x00, 0x00, 0x00, mui_type]))
 
+        first_block = True
+
         try:
             segment = yield
             while segment is not None:
                 segment = bytes(segment)
                 esf.write(segment[10:])
                 mui.write(segment[10:11] + pack(">I", unpack(">H", segment[11:13])[0]+3))
-                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10])))
+                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10]), first_block))
+                if segment[10] == GraphicSegment.END:
+                    first_block = False
                 segment = yield
             mui.write(cls._mui_tail())
         except Exception as e:
@@ -403,13 +420,17 @@ class EsMuiStream:
 
         mui.write(bytes([0x00, 0x00, 0x00, MUIType.GRAPHICS]))
 
+        first_block = True
+
         try:
             for sc, segment in enumerate(stream.gen_segments()):
                 #Write segment without length and timing data
                 esf.write(segment[10:])
                 #Write header (segment type, length+3, )
                 mui.write(segment[10:11] + pack(">I", unpack(">H", segment[11:13])[0]+3))
-                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10])))
+                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10]), first_block))
+                if segment[10] == GraphicSegment.END:
+                    first_block = False
             #write tail
             mui.write(bytes([0xFF] + [0x00]*13))
             print(f"Converted {sc} segments.")
