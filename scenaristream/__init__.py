@@ -329,7 +329,7 @@ class EsMuiStream:
 
         mui.write(bytes([0x00, 0x00, 0x00, mui_type]))
 
-        first_block = True
+        first_block = 0
 
         try:
             segment = yield
@@ -337,9 +337,9 @@ class EsMuiStream:
                 segment = bytes(segment)
                 esf.write(segment[10:])
                 mui.write(segment[10:11] + pack(">I", unpack(">H", segment[11:13])[0]+3))
-                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10]), first_block))
-                if segment[10] == GraphicSegment.END:
-                    first_block = False
+                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10]), first_block < 10))
+                if segment[10] == GraphicSegment.END and first_block < 10:
+                    first_block += 1
                 segment = yield
             mui.write(cls._mui_tail())
         except Exception as e:
@@ -419,7 +419,7 @@ class EsMuiStream:
 
         mui.write(bytes([0x00, 0x00, 0x00, MUIType.GRAPHICS]))
 
-        first_block = True
+        first_block = 0
 
         try:
             for sc, segment in enumerate(stream.gen_segments()):
@@ -427,9 +427,9 @@ class EsMuiStream:
                 esf.write(segment[10:])
                 #Write header (segment type, length+3, )
                 mui.write(segment[10:11] + pack(">I", unpack(">H", segment[11:13])[0]+3))
-                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10]), first_block))
-                if segment[10] == GraphicSegment.END:
-                    first_block = False
+                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10]), first_block < 10))
+                if segment[10] == GraphicSegment.END and first_block < 10:
+                    first_block += 1
             #write tail
             mui.write(bytes([0xFF] + [0x00]*13))
             print(f"Converted {sc} segments.")
