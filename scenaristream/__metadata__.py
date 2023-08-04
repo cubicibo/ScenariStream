@@ -26,7 +26,7 @@ SOFTWARE.
 
 __MAJOR = 0
 __MINOR = 0
-__REV   = 3
+__REV   = 4
 
 __version__ = '.'.join(map(str, [__MAJOR, __MINOR, __REV]))
 __author__ = 'cubicibo'
