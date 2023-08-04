@@ -219,29 +219,26 @@ class EsMuiStream:
 
     @staticmethod
     def encode_timestamps(pts: int, dts: int, is_first_block: bool = False) -> bytes:
-        #Convert PTS and DTS to cryptic scenarist format
-        mask = (1 << 32) - 1
+        UINT32_NVALS = (1 << 32)
         payload = bytearray(b'\x00'*9)
-        is_overflow = dts + int(27e6) > mask
         payload[4] |= 0x80*bool(dts % 2) #accuracy
 
-        if not is_overflow:
-            sdts = (dts >> 1) + int(27e6)
+        #The conversion is lossy (DTS 33, PTS 39) bits -> (DTS 32, PTS 32) bits.
+        #We use a flag, is_first_block, to cheat and apply a different equation
+        #to the first set of segments.
+        if dts > (UINT32_NVALS >> 1) and is_first_block:
+            offset = UINT32_NVALS-dts
+            sdts = ((offset+1) >> 1) + int(27e6) - offset - ((offset+1) % 2 == 0)
+            assert sdts >= 0
         else:
-            dts = (dts + int(27e6)) & mask
-            # Black magic, or totally wrong.
-            sdts = (int(27e6 - dts) >> 1) + dts + (dts % 2)
+            sdts = ((dts >> 1) + int(27e6)) & (UINT32_NVALS-1)
         payload[:4] = pack(">I", sdts)
-
-        spts = int((pts/2 + 27e6)*128)
-        assert (spts >> 32) <= 0x7F, "Timestamp overflow."
-
-        #Due to the lossy of conversion, we assume that only the first
-        # set of segments (till the first END, inc.) can skip this operation
+        
+        spts = (pts << 6) + (int(27e6) << 7)
         if not is_first_block:
             payload[4] |= 0x7F & (spts >> 32)
 
-        payload[5:] = pack(">I", spts & mask)
+        payload[5:] = pack(">I", spts & (UINT32_NVALS - 1))
         return payload
 
     def gen_segments(self) -> Generator[bytes, None, None]:

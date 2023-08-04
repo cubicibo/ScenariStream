@@ -19,13 +19,13 @@ This utility requires Python3.9 or more.
 `python3 client.py PARAMETERS -o output_file`<br>
 
 #### Parameters
-`-s --stream <file>` – Input raw stream file (SUP-PGS, MNU-IGS or TextST).[^1]<br>
-`-x --xes <file>` – Input Scenarist Elementary Stream file (PES, IES or TES).[^1]<br>
+`-s --stream <file>` – Input raw stream file (SUP-PGS, MNU-IGS or TextST).[^2]<br>
+`-x --xes <file>` – Input Scenarist Elementary Stream file (PES, IES or TES).[^2]<br>
 `-o --output <file>` – Output file with extension. The format is inferred from the extension. For xES+MUI output, only the xES file should be specified, the MUI file is generated aside.<br>
 `-m --mui <file>` – Input Scenarist MUI file, required if .mui file has a different name or location to the .pes file.<br>
 `-t --textst` – Flag for TextST conversion.
 
-[^1]: mutually exclusive as they specify the input type.
+[^2]: mutually exclusive as they specify the input type.
 
 #### Example
 The command below converts a .SUP file to PES+MUI assets.<br>
