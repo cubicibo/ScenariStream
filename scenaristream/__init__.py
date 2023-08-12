@@ -52,7 +52,6 @@ class GraphicSegment(IntEnum):
     END = 0x80 #All
 
 class TextSegment(IntEnum):
-    END = 0x80 #?
     STYLE  = 0x81
     DIALOG = 0x82
 
@@ -100,7 +99,7 @@ class StreamFile:
         :yield: Every segment, in order, as they appear in the stream file.
         """
         MAGIC = self.get_header().value
-        assert MAGIC in [b'PG', b'IG'], "Don't know how to parse this file. (if TextST, file an issue with the sample)"
+        assert MAGIC in [b'PG', b'IG'], "Don't know how to parse this file. (if TextST, use the appropriate class)"
         HEADER_LEN = 13
 
         with open(self.file, 'rb') as f:
@@ -184,8 +183,7 @@ class TextSTFile(StreamFile):
             ####while
         ####with
         return
-
-
+####TextSTFile
 
 #%% Scenarist BD format parser
 class EsMuiStream:
@@ -226,16 +224,17 @@ class EsMuiStream:
         #The conversion is lossy (DTS 33, PTS 39) bits -> (DTS 32, PTS 32) bits.
         #We use a flag, is_first_block, to cheat and apply a different equation
         #to the first set of segments.
-        if dts > (UINT32_NVALS >> 1) and is_first_block:
+        start_of_stream = dts > (UINT32_NVALS >> 1) and is_first_block
+        if start_of_stream:
             offset = UINT32_NVALS-dts
             sdts = ((offset+1) >> 1) + int(27e6) - offset - ((offset+1) % 2 == 0)
             assert sdts >= 0
         else:
             sdts = ((dts >> 1) + int(27e6)) & (UINT32_NVALS-1)
         payload[:4] = pack(">I", sdts)
-        
+
         spts = (pts << 6) + (int(27e6) << 7)
-        if not is_first_block:
+        if not start_of_stream:
             payload[4] |= 0x7F & (spts >> 32)
 
         payload[5:] = pack(">I", spts & (UINT32_NVALS - 1))
@@ -307,6 +306,10 @@ class EsMuiStream:
         return bytes([0xFF] + [0x00]*13)
 
     @classmethod
+    def _mui_header(cls, mui_type: MUIType) -> bytes:
+        return bytes([0x00, 0x00, 0x00, int(mui_type)])
+
+    @classmethod
     def segment_writer(cls,
             es_file: Union[str, Path],
             mui_file: Optional[Union[str, Path]] = None,
@@ -324,7 +327,7 @@ class EsMuiStream:
         esf = open(es_file, 'wb')
         mui = open(mui_file, 'wb')
 
-        mui.write(bytes([0x00, 0x00, 0x00, mui_type]))
+        mui.write(cls._mui_header(mui_type))
 
         first_block = 0
 
@@ -334,9 +337,10 @@ class EsMuiStream:
                 segment = bytes(segment)
                 esf.write(segment[10:])
                 mui.write(segment[10:11] + pack(">I", unpack(">H", segment[11:13])[0]+3))
-                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10]), first_block < 10))
+                pts_dts = unpack(">" + "I"*2, segment[2:10])
+                mui.write(cls.encode_timestamps(*pts_dts, first_block < 10))
                 if segment[10] == GraphicSegment.END and first_block < 10:
-                    first_block += 1
+                    first_block += 1 if (pts_dts[0] & (1 << 31)) else 10
                 segment = yield
             mui.write(cls._mui_tail())
         except Exception as e:
@@ -369,7 +373,7 @@ class EsMuiStream:
         esf = open(es_file, 'wb')
         mui = open(mui_file, 'wb')
 
-        mui.write(bytes([0x00, 0x00, 0x00, MUIType.TEXT]))
+        mui.write(cls._mui_header(MUIType.TEXT))
 
         try:
             for sc, segment in enumerate(stream.gen_segments()):
@@ -389,7 +393,7 @@ class EsMuiStream:
                 #Write header (segment type, length+3, mux_dts=0, mux_pts=0)
                 mui.write(segment[0:1] + pack(">I", length+3) + b'\x00'*9)
             #write tail
-            mui.write(bytes([0xFF] + [0x00]*13))
+            mui.write(cls._mui_tail())
             print(f"Converted {sc} segments.")
         except Exception as e:
             print(f"Critical error while writing PES+MUI: '{e}'")
@@ -424,11 +428,13 @@ class EsMuiStream:
                 esf.write(segment[10:])
                 #Write header (segment type, length+3, )
                 mui.write(segment[10:11] + pack(">I", unpack(">H", segment[11:13])[0]+3))
-                mui.write(cls.encode_timestamps(*unpack(">" + "I"*2, segment[2:10]), first_block < 10))
+                pts_dts = unpack(">" + "I"*2, segment[2:10])
+                mui.write(cls.encode_timestamps(*pts_dts, first_block < 10))
                 if segment[10] == GraphicSegment.END and first_block < 10:
-                    first_block += 1
+                    #PTS=DTS of end > 0 -> all subsequent PTS and DTS are larger than zero
+                    first_block += 1 if (pts_dts[0] & (1 << 31)) else 10
             #write tail
-            mui.write(bytes([0xFF] + [0x00]*13))
+            mui.write(cls._mui_tail())
             print(f"Converted {sc} segments.")
         except Exception as e:
             print(f"Critical error while writing PES+MUI: '{e}'")
