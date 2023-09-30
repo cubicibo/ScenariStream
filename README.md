@@ -24,6 +24,7 @@ This utility requires Python3.9 or more.
 `-o --output <file>` – Output file with extension. The format is inferred from the extension. For xES+MUI output, only the xES file should be specified, the MUI file is generated aside.<br>
 `-m --mui <file>` – Input Scenarist MUI file, required if .mui file has a different name or location to the .pes file.<br>
 `-t --textst` – Flag for TextST conversion.
+`-l --late-ts` – Flag when the SUP or MNU input have a first presentation timestamp beyond 13 hours and 15 minutes. Meaningless with xES input.
 
 [^2]: mutually exclusive as they specify the input type.
 
