@@ -27,21 +27,24 @@ SOFTWARE.
 #%% Library
 import os
 
-from pathlib import Path
-from enum import IntEnum, Enum
-from struct import unpack, pack
 from typing import Generator, Union, Optional, Type
+from dataclasses import dataclass
+from pathlib import Path
+from struct import unpack, pack
+from enum import IntEnum, Enum
 
 class MUIType(IntEnum):
     VIDEO    = 0x01
     AUDIO    = 0x02
     GRAPHICS = 0x03
     TEXT     = 0x04
+####
 
 class StreamHeader(Enum):
     PG = b'PG'
     IG = b'IG'
     MPEG_TS = bytes([0x00, 0x00, 0x01, 0xBF])
+####
 
 class GraphicSegment(IntEnum):
     PDS = 0x14 #PGS+IGS
@@ -49,11 +52,27 @@ class GraphicSegment(IntEnum):
     PCS = 0x16
     WDS = 0x17 #PGS
     ICS = 0x18 #IGS
-    END = 0x80 #All
+    END = 0x80 #PGS+IGS
+####
 
 class TextSegment(IntEnum):
     STYLE  = 0x81
     DIALOG = 0x82
+####
+
+class TSMask(IntEnum):
+    RAWES = (1 << 32) - 1
+    MPEGTS = (1 << 33) - 1
+####
+
+class TSClock(IntEnum):
+    STC = int(27e6)
+    PTS = int(90e3)
+
+class TSOffset(IntEnum):
+    RAWES = int(90e3)
+    MUIES = int(54e6)
+####
 
 #%% Raw stream format (tsMuxer, SUPer, avs2bdnxml)
 class StreamFile:
@@ -185,6 +204,89 @@ class TextSTFile(StreamFile):
         return
 ####TextSTFile
 
+@dataclass
+class TSContext:
+    carry: int = 0
+    offset: int = 0
+
+    def __post_init__(self) -> None:
+        self.carry = int(self.carry)
+        self.offset = int(self.offset)
+        self._prev_dts = (-1)*TSClock.PTS
+        self._negative_possible = self.carry == 0
+
+    @classmethod
+    def from_dts(cls, dts: int) -> 'TSContext':
+        ctx = cls((max(dts, 0) & TSMask.RAWES)//(TSMask.RAWES+1), TSClock.PTS)
+        ctx._negative_possible = dts < 0
+        return ctx
+
+    @classmethod
+    def from_float_dts(cls, dts: float) -> 'TSContext':
+        ctx = cls(round(max(dts, 0.0)*TSClock.PTS)//(TSMask.RAWES+1), TSClock.PTS)
+        ctx._negative_possible = dts < 0
+        return ctx
+
+    def get_full_range(self, pts: int, dts: int) -> tuple[int, int]:
+        self.carry += (self._prev_dts + self.offset > dts + self.offset)
+
+        if self._negative_possible and dts > TSMask.RAWES - self.offset:
+            dts = -1 * ((-1*dts) & TSMask.RAWES)
+            if pts > TSMask.RAWES - self.offset:
+                pts = -1 * ((-1*pts) & TSMask.RAWES)
+        elif pts > dts:
+            self._negative_possible = False
+
+        self._prev_dts = dts
+
+        if not self._negative_possible and pts < dts:
+            pts += TSMask.RAWES + 1
+        return self.carry*(TSMask.RAWES+1) + dts, pts + self.carry*(TSMask.RAWES+1)
+####
+
+class TSPair:
+    def __init__(self, dts: int, pts: int) -> None:
+        self.dts, self.pts = dts, pts
+
+    @classmethod
+    def from_mui(cls, tc_bytestring: bytes) -> tuple[int, int]:
+        # DTS has 33 bits and is defined on the 90 kHz clock
+        # Remove ticks offset and shift by one bit as the DTS LSB is on the 4th byte.
+        dts = (unpack(">I", tc_bytestring[:4])[0]) << 1
+        dts += (tc_bytestring[4] >> 7)
+
+        # PTS has 39 bits, whom 6 are unused, so we assume 33 bits.
+        pts = (tc_bytestring[4] & 0x7F) << 32
+        pts += unpack(">I", tc_bytestring[5:])[0]
+        return cls(dts - TSOffset.MUIES, (pts >> 6) - TSOffset.MUIES)
+
+    @classmethod
+    def from_rawes(cls, tc_bytestring: bytes, ctx: Optional[TSContext] = None) -> tuple[int, int]:
+        pts, dts = unpack(">" + "I"*2, tc_bytestring)
+        if ctx is not None:
+            return cls(*ctx.get_full_range(pts, dts))
+        else:
+            return cls(dts, pts)
+
+    def to_mui(self) -> bytes:
+        dts, pts = self.dts, self.pts
+        dts = (dts + TSOffset.MUIES) & TSMask.MPEGTS
+        pts = (pts + TSOffset.MUIES) & TSMask.MPEGTS
+
+        payload = bytearray(b'\x00'*9)
+        # encode DTS MSBs.LSB
+        payload[:4] = pack(">I", (dts >> 1) & ((1 << 32) - 1))
+
+        # encode PTS as 39 bits (easier than 33 bits in the middle of two bytes)
+        payload[4:9] = pack(">Q", (pts << 6) & ((1 << 39) - 1))[3:]
+        payload[4] |= ((dts & 0x1) << 7)
+        return bytes(payload)
+
+    def to_rawes(self) -> bytes:
+        dts, pts = self.dts, self.pts
+        return pack('>' + 2*'I', *map(lambda ts: ts & TSMask.RAWES, (pts, dts)))
+####
+
 #%% Scenarist BD format parser
 class EsMuiStream:
     def __init__(self, mui_file: Union[str, Path], es_file: Union[str, Path]) -> None:
@@ -203,42 +305,6 @@ class EsMuiStream:
     @property
     def type(self) -> MUIType:
         return MUIType(self._mui_data[3])
-
-    @staticmethod
-    def get_timestamps(tc_bytestring: bytes) -> bytes:
-        mask = (1 << 32) - 1
-        #Convert the proprietary timestamps to standard PTS and DTS
-        dts = unpack(">I", tc_bytestring[:4])[0] - int(27e6)
-        dts = (dts << 1) + (tc_bytestring[4] >> 7)
-        ov_cnt = tc_bytestring[4] & 0x7F
-        #for each overflow, we add 2**32/128
-        pts = ((unpack(">I", tc_bytestring[5:])[0])/128 + (1 << 25)*ov_cnt - 27e6)/45e3
-        return pack(">I", round(pts*90e3) & mask) + pack(">I", dts & mask)
-
-    @staticmethod
-    def encode_timestamps(pts: int, dts: int, is_first_block: bool = False) -> bytes:
-        UINT32_NVALS = (1 << 32)
-        payload = bytearray(b'\x00'*9)
-        payload[4] |= 0x80*bool(dts % 2) #accuracy
-
-        #The conversion is lossy (DTS 33, PTS 39) bits -> (DTS 32, PTS 32) bits.
-        #We use a flag, is_first_block, to cheat and apply a different equation
-        #to the first set of segments.
-        start_of_stream = dts > (UINT32_NVALS >> 1) and is_first_block
-        if start_of_stream:
-            offset = UINT32_NVALS-dts
-            sdts = ((offset+1) >> 1) + int(27e6) - offset - ((offset+1) % 2 == 0)
-            assert sdts >= 0
-        else:
-            sdts = ((dts >> 1) + int(27e6)) & (UINT32_NVALS-1)
-        payload[:4] = pack(">I", sdts)
-
-        spts = (pts << 6) + (int(27e6) << 7)
-        if not start_of_stream:
-            payload[4] |= 0x7F & (spts >> 32)
-
-        payload[5:] = pack(">I", spts & (UINT32_NVALS - 1))
-        return payload
 
     def gen_segments(self) -> Generator[bytes, None, None]:
         if self.type == MUIType.GRAPHICS:
@@ -281,7 +347,7 @@ class EsMuiStream:
                 index += 1
                 block_length = unpack(">I", self._mui_data[index:(index:=index+4)])[0]
 
-                header = __class__.get_timestamps(self._mui_data[index:(index:=index+9)])
+                header = TSPair.from_mui(self._mui_data[index:(index:=index+9)]).to_rawes()
                 segment_data = pes.read(block_length)
                 if len(segment_data) < block_length:
                     segment_data += pes.read(block_length-len(segment_data))
@@ -313,7 +379,8 @@ class EsMuiStream:
     def segment_writer(cls,
             es_file: Union[str, Path],
             mui_file: Optional[Union[str, Path]] = None,
-            mui_type: MUIType = MUIType.GRAPHICS
+            mui_type: MUIType = MUIType.GRAPHICS,
+            first_dts: float = -1.0,
         ) -> Generator[None, Type[bytes], None]:
         """
         Write segments as they arrive to manage memory efficiently.
@@ -326,10 +393,9 @@ class EsMuiStream:
 
         esf = open(es_file, 'wb')
         mui = open(mui_file, 'wb')
-
         mui.write(cls._mui_header(mui_type))
 
-        first_block = 0
+        ctx = TSContext.from_float_dts(first_dts)
 
         try:
             segment = yield
@@ -337,10 +403,7 @@ class EsMuiStream:
                 segment = bytes(segment)
                 esf.write(segment[10:])
                 mui.write(segment[10:11] + pack(">I", unpack(">H", segment[11:13])[0]+3))
-                pts_dts = unpack(">" + "I"*2, segment[2:10])
-                mui.write(cls.encode_timestamps(*pts_dts, first_block < 10))
-                if segment[10] == GraphicSegment.END and first_block < 10:
-                    first_block += 1 if (pts_dts[0] & (1 << 31)) else 10
+                mui.write(TSPair.from_rawes(segment[2:10], ctx).to_mui())
                 segment = yield
             mui.write(cls._mui_tail())
         except Exception as e:
@@ -361,7 +424,7 @@ class EsMuiStream:
             ticks = 0
             for byte in pts:
                 ticks = (ticks << 8) + byte
-            return ticks + 54000000 #600*90e3
+            return ticks + TSOffset.MUIES
 
         def encode_pts(pts: int) -> bytes:
             return bytes([(pts >> (8*(4-k))) & 0xFF for k in range(5)])
@@ -380,10 +443,7 @@ class EsMuiStream:
                 length = unpack(">H", segment[1:3])[0]
                 #Write segment without length and timing data
                 if segment[0] == TextSegment.STYLE:
-                    #hack, SubtitleEdit includes number of dialog linked to style
-                    #in length but Scenarist does not. SubtitleEdit may do something wrong.
-                    ts_length = length-2
-                    esf.write(segment[0:1] + bytes([ts_length >> 8, ts_length & 0xFF]) + segment[3:])
+                    esf.write(segment[0:1] + bytes([length >> 8, length & 0xFF]) + segment[3:])
                 elif segment[0] == TextSegment.DIALOG:
                     pts1 = encode_pts(shift_pts(segment[3:8]))
                     pts2 = encode_pts(shift_pts(segment[8:13]))
@@ -405,6 +465,7 @@ class EsMuiStream:
             stream_file: Union[str, Path],
             es_file: Union[str, Path],
             mui_file: Optional[Union[str, Path]] = None,
+            first_dts: float = -1.0,
         ) -> None:
         """
         Convert a graphic stream to a MuiFile.
@@ -420,7 +481,7 @@ class EsMuiStream:
 
         mui.write(bytes([0x00, 0x00, 0x00, MUIType.GRAPHICS]))
 
-        first_block = 0
+        ctx = TSContext.from_float_dts(first_dts)
 
         try:
             for sc, segment in enumerate(stream.gen_segments()):
@@ -428,11 +489,7 @@ class EsMuiStream:
                 esf.write(segment[10:])
                 #Write header (segment type, length+3, )
                 mui.write(segment[10:11] + pack(">I", unpack(">H", segment[11:13])[0]+3))
-                pts_dts = unpack(">" + "I"*2, segment[2:10])
-                mui.write(cls.encode_timestamps(*pts_dts, first_block < 10))
-                if segment[10] == GraphicSegment.END and first_block < 10:
-                    #PTS=DTS of end > 0 -> all subsequent PTS and DTS are larger than zero
-                    first_block += 1 if (pts_dts[0] & (1 << 31)) else 10
+                mui.write(TSPair.from_rawes(segment[2:10], ctx).to_mui())
             #write tail
             mui.write(cls._mui_tail())
             print(f"Converted {sc} segments.")

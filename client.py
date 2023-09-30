@@ -24,7 +24,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-from scenaristream import EsMuiStream
+from scenaristream import EsMuiStream, TSClock
 from scenaristream.__metadata__ import __author__, __version__
 
 import os
@@ -48,7 +48,7 @@ if __name__ == '__main__':
 
     parser.add_argument("-m", "--mui", type=str, help="Input MUI associated to xES to convert.", default='')
     parser.add_argument("-t", "--textst", help="Use if TextST.", action='store_true')
-
+    parser.add_argument("-l", "--late-ts", help="Flag if first PTS is after 13.5 hours when converting to xES+MUI.", action='store_true')
 
     parser.add_argument('-v', '--version', action='version', version=f"(c) {__author__}, v{__version__}")
     parser.add_argument("-o", "--output",  type=str, required=True)
@@ -87,7 +87,8 @@ if __name__ == '__main__':
         elif args.textst:
             EsMuiStream.convert_to_tesmui(args.stream, args.output, args.output + '.mui')
         else:
-            EsMuiStream.convert_to_pesmui(args.stream, args.output, args.output + '.mui')
+            first_dts = ((1<<32)/TSClock.PTS) if args.late_ts else (-1.0)
+            EsMuiStream.convert_to_pesmui(args.stream, args.output, args.output + '.mui', first_dts=first_dts)
         exit_msg("", is_error=False)
     elif args.mui:
         print("Converting from xES+MUI...")
