@@ -1,10 +1,10 @@
 # ScenariStream
-Scenarist MUI+Elementary Stream <-> SUP, MNU, TextST conversion tool.
+Scenarist MUI+Elementary Stream and raw stream manipulation library.
 
 ## Brief
-ScenariStream is a Python utility to perform bidirectional conversion between proprietary Scenarist project files (MUI+xES) and open format data streams like SUP/PGS, MNU/IGS and TextST.
+ScenariStream is a Python utility to manipulate and perform bidirectional conversion between proprietary Scenarist project files (MUI+xES) and open data stream formats like SUP/PGS, MNU/IGS and TextST.
 
-In other words, this tool converts SUP (subtitles) or IGS (interactive menu) files generated with open source projects to Scenarist BD assets that can be imported in Scenarist authoring suite. Similarly, data streams generated with Scenarist BD can be converted to their respective open format, to be usable with tools like BDEdit, tsMuxer, etc! The conversion is bijective: all data and timestamps are preserved[^1].
+In other words, this tool converts SUP (captions) or IGS (interactive menu) files generated using open source projects to Scenarist BD assets that may be imported professional Blu-ray authoring suites. Similarly, data streams generated with authoring suites can be converted to their respective open format, to be usable with tools like BDEdit, tsMuxer, etc! The conversion is bijective: all data and timestamps are preserved[^1].
 
 [^1]: As long as the duration of the stream is below 13:15:21,858 for SUP and IGS, this should not be an issue anyway.
 
@@ -23,7 +23,7 @@ This utility requires Python3.9 or more.
 `-x --xes <file>` – Input Scenarist Elementary Stream file (PES, IES or TES).[^2]<br>
 `-o --output <file>` – Output file with extension. The format is inferred from the extension. For xES+MUI output, only the xES file should be specified, the MUI file is generated aside.<br>
 `-m --mui <file>` – Input Scenarist MUI file, required if .mui file has a different name or location to the .pes file.<br>
-`-t --textst` – Flag for TextST conversion.
+`-t --textst` – Flag for TextST conversion.<br/>
 `-l --late-ts` – Flag when the SUP or MNU input have a first presentation timestamp beyond 13 hours and 15 minutes. Meaningless with xES input.
 
 [^2]: mutually exclusive as they specify the input type.
@@ -35,7 +35,7 @@ The existing ./project folder will be populated with the output of the program: 
 
 ### Python library
 ScenariStream may also be installed as a Python library:<br>
-`python3 -m pip install git+https://github.com/cubicibo/ScenariStream.git` (`@v0.x.y` for a specific release)
+`python3 -m pip install git+https://github.com/cubicibo/ScenariStream.git`
 
 Internal classes are:
 - `EsMuiStream` to parse ES+MUI assets.
